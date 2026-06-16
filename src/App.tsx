@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { 
   Certificate, 
   CertificateTemplate, 
@@ -225,6 +227,7 @@ export default function App() {
   
   // Modo Escuro
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
 
   // Alertas / Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -440,15 +443,84 @@ export default function App() {
     addToast('Certificado apagado do registo permanente.', 'warning');
   };
 
-  const downloadCertificateMock = (cert: Certificate) => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cert, null, 2));
+  const downloadCertificatePDF = async (cert: Certificate) => {
+    // Definir o certificado em modo de visualização caso já não esteja
+    const isAlreadyViewing = viewingCert && viewingCert.id === cert.id;
+    if (!isAlreadyViewing) {
+      setViewingCert(cert);
+    }
+
+    addToast(`A processar PDF de alta-fidelidade para o certificado...`, 'info');
+    setIsExportingPDF(true);
+
+    // Tempo para re-renderização suave no DOM e inicialização do Canvas
+    setTimeout(async () => {
+      try {
+        const element = document.getElementById('printable-certificate-area');
+        if (!element) {
+          addToast('Área gráfica do certificado não foi encontrada no DOM.', 'danger');
+          setIsExportingPDF(false);
+          return;
+        }
+
+        const canvas = await html2canvas(element, {
+          scale: 2.5, // Resolução ultra nítida profissional
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+        
+        // Orientação do documento idêntica ao design ativo
+        const isPortrait = selectedTemplate.orientation === 'portrait';
+        const pdf = new jsPDF({
+          orientation: isPortrait ? 'portrait' : 'landscape',
+          unit: 'mm',
+          format: 'a4'
+        });
+
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+
+        const imgWidth = pdfWidth;
+        const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+        // Centrar o certificado verticalmente na folha A4
+        let yPos = (pdfHeight - imgHeight) / 2;
+        if (yPos < 0) yPos = 0;
+
+        pdf.addImage(imgData, 'PNG', 0, yPos, imgWidth, imgHeight);
+
+        // Sanetizar o nome do aluno para gravação de ficheiro segura e limpa
+        const sanitizedName = cert.recipientName.trim()
+          .replace(/\s+/g, '-')
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+
+        pdf.save(`certificado-${sanitizedName}-${cert.verificationCode}.pdf`);
+
+        addToast(`Download completo do certificado de ${cert.recipientName} em PDF Premium!`, 'success');
+      } catch (err) {
+        console.error('Pdf download rendering error:', err);
+        addToast('Erro ao exportar PDF de alta resolução. Verifique o layout visual.', 'danger');
+      } finally {
+        setIsExportingPDF(false);
+      }
+    }, 450);
+  };
+
+  const exportAllCertificatesJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(certificates, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `certificado-${cert.verificationCode}.json`);
+    downloadAnchor.setAttribute("download", `cergest-database-backup.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
-    addToast(`Ficheiro de verificação do certificado descarregado com sucesso.`, 'success');
+    addToast('Base de dados completa exportada em formato JSON backup.', 'success');
   };
 
   // Atualizar Definições da Instituição
@@ -682,16 +754,6 @@ export default function App() {
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#022c22]/10 via-[#070b15]/95 to-[#020408] z-0 pointer-events-none"></div>
         <div className="absolute top-12 left-10 w-96 h-96 rounded-full bg-purple-500/5 blur-3xl z-0 pointer-events-none"></div>
         <div className="absolute bottom-10 right-10 w-80 h-80 rounded-full bg-emerald-55/5 blur-3xl z-0 pointer-events-none"></div>
-
-        <div className="absolute right-4 top-4 z-20 flex items-center space-x-2">
-          <button
-            onClick={toggleDarkMode}
-            className="p-2 border border-slate-200 dark:border-slate-850 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors bg-white/10 dark:bg-slate-905/30 w-10 h-10 flex items-center justify-center cursor-pointer"
-            title="Sintonia da palete"
-          >
-            <i className={`ti ${isDarkMode ? 'ti-sun' : 'ti-moon'} text-base`}></i>
-          </button>
-        </div>
 
         <div className="w-full max-w-4xl relative z-10">
           <LoginForm 
@@ -1010,8 +1072,7 @@ export default function App() {
               <button
                 id="header-btn-export-all"
                 onClick={() => {
-                  downloadCertificateMock(certificates[0]);
-                  addToast('Histórico completo exportado com sucesso.', 'success');
+                  exportAllCertificatesJSON();
                 }}
                 className="text-xs px-3 py-2 theme-rounded hover:opacity-95 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] theme-border bg-[var(--color-bg-primary)] transition-all font-medium flex items-center space-x-1"
               >
@@ -2061,11 +2122,12 @@ export default function App() {
                               {/* Descarregar (Download) */}
                               <button 
                                 id={`btn-download-${cert.id}`}
-                                onClick={() => downloadCertificateMock(cert)}
-                                className="p-1 px-2 border theme-border theme-rounded bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:text-emerald-600 hover:border-emerald-200 transition-colors flex items-center justify-center space-x-1 text-[10px]"
-                                title="Descarregar Assinatura JSON"
+                                onClick={() => downloadCertificatePDF(cert)}
+                                className="p-1 px-2 border theme-border theme-rounded bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:text-emerald-600 hover:border-emerald-200 transition-colors flex items-center justify-center space-x-1 text-[10px] cursor-pointer"
+                                title="Descarregar PDF Premium"
                               >
-                                <i className="ti ti-download"></i>
+                                <i className="ti ti-file-type-pdf text-xs text-emerald-600"></i>
+                                <span className="hidden sm:inline">PDF</span>
                               </button>
 
                               {/* Eliminar */}
@@ -3045,314 +3107,327 @@ export default function App() {
             onClick={() => setViewingCert(null)}
           >
             <div 
-              className={`bg-white text-slate-900 theme-rounded shadow-2xl relative transition-all duration-300 transform scale-100 flex flex-col justify-between ${
-                selectedTemplate.orientation === 'portrait'
-                  ? 'w-full max-w-md p-6 aspect-[1/1.414]'
-                  : 'w-full max-w-4xl p-8 md:p-10'
+              className={`flex flex-col space-y-4 max-h-[95vh] overflow-y-auto w-full ${
+                selectedTemplate.orientation === 'portrait' ? 'max-w-md' : 'max-w-4xl'
               }`}
               onClick={(e) => e.stopPropagation()}
-              style={{
-                borderColor: selectedTemplate.borderColor,
-                borderStyle: selectedTemplate.borderStyle,
-                borderWidth: selectedTemplate.borderStyle === 'double' ? '12px' : '6px',
-                fontFamily: selectedTemplate.fontFamily === 'serif' ? 'Georgia, serif' : selectedTemplate.fontFamily === 'mono' ? 'Courier, monospace' : 'sans-serif',
-                minHeight: selectedTemplate.orientation === 'portrait' ? 'auto' : '520px'
-              }}
             >
-              
-              {selectedTemplate.styleName === 'ilungi' ? (
-                // MODELO DE VISUALIZAÇÃO INTERATIVA ILUNGI
-                <div className="w-full h-full flex flex-col justify-between relative p-1 pb-1">
-                  {/* Botão fechar */}
-                  <button 
-                    id="btn-close-modal"
-                    onClick={() => setViewingCert(null)}
-                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors w-7 h-7 rounded-full flex items-center justify-center font-medium z-30 cursor-pointer"
-                    title="Fechar"
-                  >
-                    <i className="ti ti-x text-sm"></i>
-                  </button>
-
-                  {/* Top right purple block */}
-                  <div className="absolute top-0 right-0 pointer-events-none">
-                    <svg width="75" height="75" viewBox="0 0 65 65" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M0 0H65V65H42V23H0V0Z" fill="#7811f7" />
-                    </svg>
-                  </div>
-
-                  {/* Header row with logo */}
-                  <div className="flex justify-between items-start pt-1 px-1">
-                    <div className="flex items-center space-x-0.5 tracking-tight">
-                      <span className="text-xl font-extrabold text-[#022c22] font-sans">ilu</span>
-                      <span className="text-xl font-extrabold text-[#022c22] font-sans">ng</span>
-                      <span className="text-xl font-extrabold text-[#022c22] font-sans relative">
-                        i
-                        <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#7811f7]"></span>
-                      </span>
+              {/* ÁREA IMPRIMÍVEL DO CERTIFICADO (Capturado por html2canvas) */}
+              <div 
+                id="printable-certificate-area"
+                className="bg-white text-slate-900 shadow-2xl relative transition-all duration-300 flex flex-col justify-between overflow-hidden"
+                style={{
+                  borderColor: selectedTemplate.borderColor,
+                  borderStyle: selectedTemplate.borderStyle,
+                  borderWidth: selectedTemplate.borderStyle === 'double' ? '12px' : '6px',
+                  fontFamily: selectedTemplate.fontFamily === 'serif' ? 'Georgia, serif' : selectedTemplate.fontFamily === 'mono' ? 'Courier, monospace' : 'sans-serif',
+                  minHeight: selectedTemplate.orientation === 'portrait' ? '460px' : '520px',
+                  aspectRatio: selectedTemplate.orientation === 'portrait' ? '1 / 1.414' : '1.414 / 1',
+                  padding: selectedTemplate.orientation === 'portrait' ? '24px' : '40px',
+                  boxSizing: 'border-box',
+                  width: '100%',
+                }}
+              >
+                {selectedTemplate.styleName === 'ilungi' ? (
+                  // MODELO DE VISUALIZAÇÃO INTERATIVA ILUNGI
+                  <div className="w-full h-full flex flex-col justify-between relative p-1 pb-1">
+                    {/* Top right purple block */}
+                    <div className="absolute top-0 right-0 pointer-events-none">
+                      <svg width="75" height="75" viewBox="0 0 65 65" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M0 0H65V65H42V23H0V0Z" fill="#7811f7" />
+                      </svg>
                     </div>
-                  </div>
 
-                  {/* Title block */}
-                  <div className="text-center mt-2">
-                    <h2 className="text-2xl font-black tracking-[0.25em] text-[#022c22] font-sans">
-                      CERTIFICADO
-                    </h2>
-                    <p className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold mt-1">
-                      A ACADEMIA ILUNGI certifica que:
-                    </p>
-                  </div>
+                    {/* Header row with logo */}
+                    <div className="flex justify-between items-start pt-1 px-1">
+                      <div className="flex items-center space-x-0.5 tracking-tight">
+                        <span className="text-xl font-extrabold text-[#022c22] font-sans">ilu</span>
+                        <span className="text-xl font-extrabold text-[#022c22] font-sans">ng</span>
+                        <span className="text-xl font-extrabold text-[#022c22] font-sans relative">
+                          i
+                          <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#7811f7]"></span>
+                        </span>
+                      </div>
+                    </div>
 
-                  {/* Recipient area */}
-                  <div className="text-center my-3">
-                    <h3 className="text-lg font-black text-[#022c22] uppercase tracking-wide">
-                      {viewingCert.recipientName || 'ALUNO INTERATIVO'}
-                    </h3>
-                    <p className="text-[9px] text-slate-400 font-medium mt-0.5">
-                      Concluiu com êxito o programa de formação:
-                    </p>
-                    <h4 className="text-[11px] font-bold text-[#022c22] uppercase tracking-wide leading-tight mt-1 px-2">
-                      {viewingCert.courseName || 'TITULO DO CURSO'}
-                    </h4>
-                  </div>
+                    {/* Title block */}
+                    <div className="text-center mt-2">
+                      <h2 className="text-2xl font-black tracking-[0.25em] text-[#022c22] font-sans">
+                        CERTIFICADO
+                      </h2>
+                      <p className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold mt-1">
+                        A ACADEMIA ILUNGI certifica que:
+                      </p>
+                    </div>
 
-                  {/* Dates & Hours parameters */}
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[9px] bg-slate-50 p-2.5 rounded border border-slate-100 text-left font-sans">
-                    <div>
-                      <span className="text-slate-400 font-medium">Data de Início:</span>{' '}
-                      <span className="text-slate-800 font-bold">{viewingCert.startDate || '05 de maio de 2025'}</span>
+                    {/* Recipient area */}
+                    <div className="text-center my-3">
+                      <h3 className="text-lg font-black text-[#022c22] uppercase tracking-wide">
+                        {viewingCert.recipientName || 'ALUNO INTERATIVO'}
+                      </h3>
+                      <p className="text-[9px] text-slate-400 font-medium mt-0.5">
+                        Concluiu com êxito o programa de formação:
+                      </p>
+                      <h4 className="text-[11px] font-bold text-[#022c22] uppercase tracking-wide leading-tight mt-1 px-2">
+                        {viewingCert.courseName || 'TITULO DO CURSO'}
+                      </h4>
                     </div>
-                    <div className="text-right">
-                      <span className="text-slate-400 font-medium">Duração:</span>{' '}
-                      <span className="text-slate-800 font-bold">{viewingCert.hours || '0'} horas</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 font-medium">Data de término:</span>{' '}
-                      <span className="text-slate-800 font-bold">{viewingCert.endDate || '30 de maio de 2025'}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-slate-400 font-medium">Pontuação final:</span>{' '}
-                      <span className="text-slate-800 font-bold">{viewingCert.grade || '18 (de 20 valores)'}</span>
-                    </div>
-                  </div>
 
-                  {/* Program schedule list block */}
-                  <div className="text-left font-sans mt-2 space-y-0.5 bg-slate-50/50 p-2 text-[8px] border-l-2 border-[#022c22] rounded max-h-[105px] overflow-hidden">
-                    <p className="font-bold text-slate-700 text-[9px] leading-none mb-1">Programa:</p>
-                    <div className="space-y-0.5 text-slate-600 font-medium max-h-[75px] overflow-y-auto pr-0.5 scrollbar-thin">
-                      {(viewingCert.curriculum || `• Módulo 1 - Enquadramento Jurídico Da Shst E Conceitos Fundamentais
+                    {/* Dates & Hours parameters */}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[9px] bg-slate-50 p-2.5 rounded border border-slate-100 text-left font-sans">
+                      <div>
+                        <span className="text-slate-400 font-medium">Data de Início:</span>{' '}
+                        <span className="text-slate-800 font-bold">{viewingCert.startDate || '05 de maio de 2025'}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-400 font-medium">Duração:</span>{' '}
+                        <span className="text-slate-800 font-bold">{viewingCert.hours || '0'} horas</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-medium">Data de término:</span>{' '}
+                        <span className="text-slate-800 font-bold">{viewingCert.endDate || '30 de maio de 2025'}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-400 font-medium">Pontuação final:</span>{' '}
+                        <span className="text-slate-800 font-bold">{viewingCert.grade || '18 (de 20 valores)'}</span>
+                      </div>
+                    </div>
+
+                    {/* Program schedule list block */}
+                    <div className="text-left font-sans mt-2 space-y-0.5 bg-slate-50/50 p-2 text-[8px] border-l-2 border-[#022c22] rounded max-h-[105px] overflow-hidden">
+                      <p className="font-bold text-slate-700 text-[9px] leading-none mb-1">Programa:</p>
+                      <div className="space-y-0.5 text-slate-600 font-medium max-h-[75px] overflow-y-auto pr-0.5 scrollbar-thin">
+                        {(viewingCert.curriculum || `• Módulo 1 - Enquadramento Jurídico Da Shst E Conceitos Fundamentais
 • Módulo 2A - Risco De Incêndio
 • Módulo 2B - Risco Eléctrico
 • Módulo 3A - AMBIENTE TÉRMICO / QUALIDADE DO AR
 • Módulo 3B - EXPOSIÇÃO A AGENTES QUÍMICOS`)
-                        .split('\n')
-                        .filter(line => line.trim())
-                        .map((line, idx) => (
-                          <div key={idx} className="truncate select-none leading-tight">
-                            {line}
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-
-                  {/* Bottom row signatures and metadata */}
-                  <div className="grid grid-cols-2 gap-4 items-end mt-2 pt-1 border-t border-slate-100 font-sans text-left pb-1">
-                    <div className="text-[7px] text-slate-500 space-y-0.5 scale-95 origin-left">
-                      <div>
-                        <span className="font-bold">ILUNGI® Certificado No:</span>{' '}
-                        <span className="font-mono text-slate-800 font-bold">{viewingCert.verificationCode}</span>
-                      </div>
-                      <div>
-                        <span className="font-bold">ILUNGI® Data de Emissão:</span>{' '}
-                        <span className="text-slate-800">{viewingCert.issueDate || '30 de maio de 2025'}</span>
-                      </div>
-                      <div>
-                        <span className="font-bold">ILUNGI® Data de Validade:</span>{' '}
-                        <span className="text-slate-800">N/A</span>
-                      </div>
-                      <div>
-                        <span className="font-bold">ILUNGI® Curso No:</span>{' '}
-                        <span className="font-mono text-slate-800">{viewingCert.courseNo || 'MEQR'}</span>
-                      </div>
-                      <div>
-                        <span className="font-bold">INEFOP Licença No:</span>{' '}
-                        <span className="font-mono text-slate-800">{viewingCert.inefopLicense || '917.01/LDA./2014'}</span>
+                          .split('\n')
+                          .filter(line => line.trim())
+                          .map((line, idx) => (
+                            <div key={idx} className="truncate select-none leading-tight">
+                              {line}
+                            </div>
+                          ))}
                       </div>
                     </div>
 
-                    <div className="text-center space-y-1">
-                      <div className="relative inline-block w-full text-center">
-                        <span className="font-mono text-[9.5px] text-indigo-900 block italic leading-none h-4 flex items-center justify-center">
-                          {profile.signatureText || viewingCert.signatoryName || 'Manuel R. J. Calado'}
-                        </span>
-                        <div className="w-full border-b border-slate-200 mt-0.5"></div>
-                      </div>
-                      <p className="text-[7px] font-bold text-slate-500 uppercase tracking-tight leading-none text-center">
-                        DIRECTOR GERAL | ILUNGI
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Bottom left corner green shape */}
-                  <div className="absolute bottom-0 left-0 pointer-events-none">
-                    <svg width="45" height="45" viewBox="0 0 45 45" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M0 0H18V27H45V45H0V0Z" fill="#022c22" />
-                    </svg>
-                  </div>
-
-                  {/* Footnote of Angola / INEFOP */}
-                  <div className="pl-14 text-right space-y-0.5 font-sans text-slate-500 scale-95 origin-right">
-                    <div className="flex items-center justify-end space-x-0.5 text-[6px] leading-none">
-                      <span className="bg-blue-600 text-white rounded-[1px] px-0.5 py-0.1 font-bold">
-                        INEFOP
-                      </span>
-                      <span className="text-blue-800 font-bold">Academia Oficial</span>
-                    </div>
-                    <p className="font-medium text-[5px] text-slate-400 truncate">
-                      https://ilungi.ao | +244 935 793 270 | Luanda
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                // CONFIGURAÇÃO DOS CANTO CLÁSSICOS PADRÃO
-                <>
-                  {/* Moldura Clássica Decorativa nos Cantos */}
-                  <div className="absolute top-5 left-5 w-10 h-10 border-t-2 border-l-2 opacity-80" style={{ borderColor: selectedTemplate.borderColor }}></div>
-                  <div className="absolute top-5 right-5 w-10 h-10 border-t-2 border-r-2 opacity-80" style={{ borderColor: selectedTemplate.borderColor }}></div>
-                  <div className="absolute bottom-5 left-5 w-10 h-10 border-b-2 border-l-2 opacity-80" style={{ borderColor: selectedTemplate.borderColor }}></div>
-                  <div className="absolute bottom-5 right-5 w-10 h-10 border-b-2 border-r-2 opacity-80" style={{ borderColor: selectedTemplate.borderColor }}></div>
-
-                  {/* Botão para fechar no topo fora do flow */}
-                  <button 
-                    id="btn-close-modal"
-                    onClick={() => setViewingCert(null)}
-                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors w-7 h-7 rounded-full flex items-center justify-center font-medium z-20 cursor-pointer"
-                    title="Fechar"
-                  >
-                    <i className="ti ti-x text-sm"></i>
-                  </button>
-
-                  {/* Header do Certificado */}
-                  <div className={`text-center space-y-2 ${selectedTemplate.orientation === 'portrait' ? 'mt-2' : 'mt-6'}`}>
-                    <div className="flex items-center justify-center space-x-2">
-                      <span className="w-8 h-8 rounded shrink-0 bg-slate-950 flex items-center justify-center text-white" style={{ backgroundColor: selectedTemplate.primaryColor }}>
-                        <i className="ti ti-school text-lg"></i>
-                      </span>
-                      <span className="text-xs uppercase tracking-widest font-heading text-slate-500 font-medium">{institution.name}</span>
-                    </div>
-                    
-                    <h2 className={`${selectedTemplate.orientation === 'portrait' ? 'text-lg md:text-xl' : 'text-3xl'} font-bold tracking-tight uppercase`} style={{ color: selectedTemplate.primaryColor }}>
-                      {selectedTemplate.titleText || 'CERTIFICADO DE CONEXÃO'}
-                    </h2>
-                    <p className="text-[10px] text-slate-400 italic">
-                      {selectedTemplate.subtitleText || 'Documento comprobatório de excelência curricular'}
-                    </p>
-                  </div>
-
-                  {/* Corpo Principal Texto do Certificado */}
-                  <div className={`text-center ${selectedTemplate.orientation === 'portrait' ? 'my-4 space-y-3 px-2' : 'my-10 space-y-5 px-8'}`}>
-                    <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Certificado Oficial de Formação Profissional</p>
-                    
-                    <span className="text-xs text-slate-500 block font-regular">Certificamos com plena distinção pedagógica que</span>
-                    
-                    <strong className={`${selectedTemplate.orientation === 'portrait' ? 'text-lg' : 'text-2xl'} block font-bold underline decoration-amber-500 underline-offset-4 text-slate-900 leading-tight`}>
-                      {viewingCert.recipientName}
-                    </strong>
-                    
-                    <p className="text-xs text-slate-700 leading-relaxed max-w-2xl mx-auto font-regular">
-                      concluiu com êxito todos os módulos avaliativos do <strong className="font-semibold text-slate-950">{viewingCert.type.toLowerCase()}</strong> de <strong className="font-semibold text-slate-950">{viewingCert.courseName}</strong>, correspondendo a uma carga total de <strong className="font-semibold text-slate-950">{viewingCert.hours} horas</strong> letivas com emissão registada em <strong className="font-semibold text-slate-950">{viewingCert.issueDate}</strong>.
-                    </p>
-
-                    {viewingCert.grade && (
-                      <p className="text-[10px] text-amber-800 font-bold bg-amber-50 inline-block px-3 py-1 rounded border border-amber-200">
-                        Classificação Geral Obtida: {viewingCert.grade}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Rodapé - Selos, Assinaturas e Informação PKI */}
-                  <div className="grid grid-cols-3 items-end border-t border-slate-100 pt-8 mt-auto pb-6">
-                    
-                    {/* Validação de Código */}
-                    <div className="text-left space-y-1 text-xs">
-                      <span className="text-[10px] text-slate-400 uppercase font-medium">Chave Única PKI</span>
-                      <p className="font-mono text-indigo-700 font-medium text-xs">{viewingCert.verificationCode}</p>
-                      <p className="text-[9px] text-slate-400">Verificável em {institution.email}</p>
-                      
-                      {/* Mock de Código QR simulado */}
-                      <div className="flex items-center space-x-1.5 mt-2">
-                        <span className="w-8 h-8 rounded border border-slate-200 flex items-center justify-center p-1 bg-white">
-                          <span className="grid grid-cols-3 gap-0.5 w-full h-full">
-                            <span className="bg-slate-950"></span>
-                            <span className="bg-[var(--color-bg-primary)]"></span>
-                            <span className="bg-slate-950"></span>
-                            <span className="bg-[var(--color-bg-primary)]"></span>
-                            <span className="bg-slate-950"></span>
-                            <span className="bg-[var(--color-bg-primary)]"></span>
-                            <span className="bg-slate-950"></span>
-                            <span className="bg-[var(--color-bg-primary)]"></span>
-                            <span className="bg-slate-950"></span>
-                          </span>
-                        </span>
-                        <span className="text-[8px] text-slate-400 font-mono">Ler Código QR</span>
-                      </div>
-                    </div>
-
-                    {/* Selo no Meio */}
-                    <div className="flex flex-col items-center justify-center">
-                      {selectedTemplate.hasSeal ? (
-                        <div className="w-16 h-16 rounded-full border-2 border-amber-400 bg-amber-50 flex items-center justify-center relative shadow-sm">
-                          <div className="w-13 h-13 rounded-full border border-dashed border-amber-500 flex items-center justify-center">
-                            <i className="ti ti-school text-amber-600 text-2xl animate-pulse"></i>
-                          </div>
-                          <div className="absolute -bottom-2 w-3.5 h-5 bg-amber-500 transform rotate-12 origin-top"></div>
-                          <div className="absolute -bottom-2 w-3.5 h-5 bg-amber-500 transform -rotate-12 origin-top"></div>
+                    {/* Bottom row signatures and metadata */}
+                    <div className="grid grid-cols-2 gap-4 items-end mt-2 pt-1 border-t border-slate-100 font-sans text-left pb-1">
+                      <div className="text-[7px] text-slate-500 space-y-0.5 scale-95 origin-left">
+                        <div>
+                          <span className="font-bold">ILUNGI® Certificado No:</span>{' '}
+                          <span className="font-mono text-slate-800 font-bold">{viewingCert.verificationCode}</span>
                         </div>
-                      ) : (
-                        <span className="text-[9px] text-slate-300 font-mono italic">Sem Selo Ativo</span>
+                        <div>
+                          <span className="font-bold">ILUNGI® Data de Emissão:</span>{' '}
+                          <span className="text-slate-800">{viewingCert.issueDate || '30 de maio de 2025'}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold">ILUNGI® Data de Validade:</span>{' '}
+                          <span className="text-slate-800">N/A</span>
+                        </div>
+                        <div>
+                          <span className="font-bold">ILUNGI® Curso No:</span>{' '}
+                          <span className="font-mono text-slate-800">{viewingCert.courseNo || 'MEQR'}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold">INEFOP Licença No:</span>{' '}
+                          <span className="font-mono text-slate-800">{viewingCert.inefopLicense || '917.01/LDA./2014'}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-center space-y-1">
+                        <div className="relative inline-block w-full text-center">
+                          <span className="font-mono text-[9.5px] text-indigo-900 block italic leading-none h-4 flex items-center justify-center">
+                            {profile.signatureText || viewingCert.signatoryName || 'Manuel R. J. Calado'}
+                          </span>
+                          <div className="w-full border-b border-slate-200 mt-0.5"></div>
+                        </div>
+                        <p className="text-[7px] font-bold text-slate-500 uppercase tracking-tight leading-none text-center">
+                          DIRECTOR GERAL | ILUNGI
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Bottom left corner green shape */}
+                    <div className="absolute bottom-0 left-0 pointer-events-none">
+                      <svg width="45" height="45" viewBox="0 0 45 45" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M0 0H18V27H45V45H0V0Z" fill="#022c22" />
+                      </svg>
+                    </div>
+
+                    {/* Footnote of Angola / INEFOP */}
+                    <div className="pl-14 text-right space-y-0.5 font-sans text-slate-500 scale-95 origin-right">
+                      <div className="flex items-center justify-end space-x-0.5 text-[6px] leading-none">
+                        <span className="bg-blue-600 text-white rounded-[1px] px-0.5 py-0.1 font-bold">
+                          INEFOP
+                        </span>
+                        <span className="text-blue-800 font-bold">Academia Oficial</span>
+                      </div>
+                      <p className="font-medium text-[5px] text-slate-400 truncate">
+                        https://ilungi.ao | +244 935 793 270 | Luanda
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  // CONFIGURAÇÃO DOS CANTO CLÁSSICOS PADRÃO
+                  <>
+                    {/* Moldura Clássica Decorativa nos Cantos */}
+                    <div className="absolute top-5 left-5 w-10 h-10 border-t-2 border-l-2 opacity-80" style={{ borderColor: selectedTemplate.borderColor }}></div>
+                    <div className="absolute top-5 right-5 w-10 h-10 border-t-2 border-r-2 opacity-80" style={{ borderColor: selectedTemplate.borderColor }}></div>
+                    <div className="absolute bottom-5 left-5 w-10 h-10 border-b-2 border-l-2 opacity-80" style={{ borderColor: selectedTemplate.borderColor }}></div>
+                    <div className="absolute bottom-5 right-5 w-10 h-10 border-b-2 border-r-2 opacity-80" style={{ borderColor: selectedTemplate.borderColor }}></div>
+
+                    {/* Header do Certificado */}
+                    <div className={`text-center space-y-2 ${selectedTemplate.orientation === 'portrait' ? 'mt-2' : 'mt-6'}`}>
+                      <div className="flex items-center justify-center space-x-2">
+                        <span className="w-8 h-8 rounded shrink-0 bg-slate-950 flex items-center justify-center text-white" style={{ backgroundColor: selectedTemplate.primaryColor }}>
+                          <i className="ti ti-school text-lg"></i>
+                        </span>
+                        <span className="text-xs uppercase tracking-widest font-heading text-slate-500 font-medium">{institution.name}</span>
+                      </div>
+                      
+                      <h2 className={`${selectedTemplate.orientation === 'portrait' ? 'text-lg md:text-xl' : 'text-3xl'} font-bold tracking-tight uppercase`} style={{ color: selectedTemplate.primaryColor }}>
+                        {selectedTemplate.titleText || 'CERTIFICADO DE CONEXÃO'}
+                      </h2>
+                      <p className="text-[10px] text-slate-400 italic">
+                        {selectedTemplate.subtitleText || 'Documento comprobatório de excelência curricular'}
+                      </p>
+                    </div>
+
+                    {/* Corpo Principal Texto do Certificado */}
+                    <div className={`text-center ${selectedTemplate.orientation === 'portrait' ? 'my-4 space-y-3 px-2' : 'my-10 space-y-5 px-8'}`}>
+                      <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Certificado Oficial de Formação Profissional</p>
+                      
+                      <span className="text-xs text-slate-500 block font-regular">Certificamos com plena distinção pedagógica que</span>
+                      
+                      <strong className={`${selectedTemplate.orientation === 'portrait' ? 'text-lg' : 'text-2xl'} block font-bold underline decoration-amber-500 underline-offset-4 text-slate-900 leading-tight`}>
+                        {viewingCert.recipientName}
+                      </strong>
+                      
+                      <p className="text-xs text-slate-700 leading-relaxed max-w-2xl mx-auto font-regular">
+                        concluiu com êxito todos os módulos avaliativos do <strong className="font-semibold text-slate-950">{viewingCert.type.toLowerCase()}</strong> de <strong className="font-semibold text-slate-950">{viewingCert.courseName}</strong>, correspondendo a uma carga total de <strong className="font-semibold text-slate-950">{viewingCert.hours} horas</strong> letivas com emissão registada em <strong className="font-semibold text-slate-950">{viewingCert.issueDate}</strong>.
+                      </p>
+
+                      {viewingCert.grade && (
+                        <p className="text-[10px] text-amber-800 font-bold bg-amber-50 inline-block px-3 py-1 rounded border border-amber-200">
+                          Classificação Geral Obtida: {viewingCert.grade}
+                        </p>
                       )}
                     </div>
 
-                    {/* Assinatura no lado direito */}
-                    <div className="text-right space-y-2 text-xs">
-                      <div className="relative inline-block">
-                        <div className="absolute -top-3 w-full text-center border-b border-slate-300"></div>
-                        <span className="font-mono text-xs text-indigo-900 block italic h-6 text-right">
-                          {viewingCert.signatoryName || '[Assinatura]'}
-                        </span>
+                    {/* Rodapé - Selos, Assinaturas e Informação PKI */}
+                    <div className="grid grid-cols-3 items-end border-t border-slate-100 pt-8 mt-auto pb-6">
+                      
+                      {/* Validação de Código */}
+                      <div className="text-left space-y-1 text-xs">
+                        <span className="text-[10px] text-slate-400 uppercase font-medium">Chave Única PKI</span>
+                        <p className="font-mono text-indigo-700 font-medium text-xs">{viewingCert.verificationCode}</p>
+                        <p className="text-[9px] text-slate-400">Verificável em {institution.email}</p>
+                        
+                        {/* Mock de Código QR simulado */}
+                        <div className="flex items-center space-x-1.5 mt-2">
+                          <span className="w-8 h-8 rounded border border-slate-200 flex items-center justify-center p-1 bg-white">
+                            <span className="grid grid-cols-3 gap-0.5 w-full h-full">
+                              <span className="bg-slate-950"></span>
+                              <span className="bg-[var(--color-bg-primary)]"></span>
+                              <span className="bg-slate-950"></span>
+                              <span className="bg-[var(--color-bg-primary)]"></span>
+                              <span className="bg-slate-950"></span>
+                              <span className="bg-[var(--color-bg-primary)]"></span>
+                              <span className="bg-slate-950"></span>
+                              <span className="bg-[var(--color-bg-primary)]"></span>
+                              <span className="bg-slate-950"></span>
+                            </span>
+                          </span>
+                          <span className="text-[8px] text-slate-400 font-mono">Ler Código QR</span>
+                        </div>
                       </div>
-                      <p className="font-medium text-slate-800 text-xs">{viewingCert.signatoryName}</p>
-                      <p className="text-[10px] text-slate-400">{viewingCert.signatoryRole}</p>
+
+                      {/* Selo no Meio */}
+                      <div className="flex flex-col items-center justify-center">
+                        {selectedTemplate.hasSeal ? (
+                          <div className="w-16 h-16 rounded-full border-2 border-amber-400 bg-amber-50 flex items-center justify-center relative shadow-sm">
+                            <div className="w-13 h-13 rounded-full border border-dashed border-amber-500 flex items-center justify-center">
+                              <i className="ti ti-school text-amber-600 text-2xl animate-pulse"></i>
+                            </div>
+                            <div className="absolute -bottom-2 w-3.5 h-5 bg-amber-500 transform rotate-12 origin-top"></div>
+                            <div className="absolute -bottom-2 w-3.5 h-5 bg-amber-500 transform -rotate-12 origin-top"></div>
+                          </div>
+                        ) : (
+                          <span className="text-[9px] text-slate-300 font-mono italic">Sem Selo Ativo</span>
+                        )}
+                      </div>
+
+                      {/* Assinatura no lado direito */}
+                      <div className="text-right space-y-2 text-xs">
+                        <div className="relative inline-block">
+                          <div className="absolute -top-3 w-full text-center border-b border-slate-300"></div>
+                          <span className="font-mono text-xs text-indigo-900 block italic h-6 text-right">
+                            {viewingCert.signatoryName || '[Assinatura]'}
+                          </span>
+                        </div>
+                        <p className="font-medium text-slate-800 text-xs">{viewingCert.signatoryName}</p>
+                        <p className="text-[10px] text-slate-400">{viewingCert.signatoryRole}</p>
+                      </div>
+
                     </div>
+                  </>
+                )}
+              </div>
 
-                  </div>
-                </>
-              )}
+              {/* Botões de Ações e Download no rodapé do Modal (Fora da área imprimível) */}
+              <div className="bg-slate-900/90 backdrop-blur-md border border-slate-850 p-4 rounded-xl flex flex-wrap gap-2.5 items-center justify-between text-xs text-white z-20">
+                <div className="flex flex-wrap gap-2">
+                  <button 
+                    id="modal-btn-download"
+                    disabled={isExportingPDF}
+                    onClick={() => downloadCertificatePDF(viewingCert)}
+                    className={`py-2 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-1.5 cursor-pointer ${
+                      isExportingPDF ? 'bg-amber-600 animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'
+                    }`}
+                  >
+                    <i className={`ti ${isExportingPDF ? 'ti-loader animate-spin' : 'ti-file-type-pdf'} text-sm`}></i>
+                    <span>{isExportingPDF ? 'A gerar PDF...' : 'Descarregar PDF Premium'}</span>
+                  </button>
 
-              {/* Botões de Conversão ou Ações no Fundo do Modal */}
-              <div className="border-t border-slate-100 pt-4 flex space-x-3 text-xs">
-                <button 
-                  id="modal-btn-download"
-                  onClick={() => downloadCertificateMock(viewingCert)}
-                  className="flex-1 py-2 rounded bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors flex items-center justify-center space-x-1"
-                >
-                  <i className="ti ti-file-download text-sm"></i>
-                  <span>Fazer Download Digital</span>
-                </button>
-                <button 
-                  id="modal-btn-print"
-                  onClick={() => {
-                    window.print();
-                    addToast('Canal de impressão invocado...', 'info');
-                  }}
-                  className="px-6 py-2 rounded border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors font-medium flex items-center justify-center space-x-1"
-                >
-                  <i className="ti ti-printer text-sm"></i>
-                  <span>Imprimir Certificado</span>
-                </button>
+                  <button 
+                    id="modal-btn-download-json"
+                    onClick={() => {
+                      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(viewingCert, null, 2));
+                      const downloadAnchor = document.createElement('a');
+                      downloadAnchor.setAttribute("href", dataStr);
+                      downloadAnchor.setAttribute("download", `certificado-${viewingCert.verificationCode}.json`);
+                      document.body.appendChild(downloadAnchor);
+                      downloadAnchor.click();
+                      downloadAnchor.remove();
+                      addToast('Ficheiro de assinatura eletrónica JSON descarregado.', 'success');
+                    }}
+                    className="py-2.5 px-3.5 rounded-lg bg-slate-800 hover:bg-slate-750 transition-colors font-medium flex items-center justify-center space-x-1 cursor-pointer"
+                    title="Ficha Cadastral e Dados Técnicos em JSON"
+                  >
+                    <i className="ti ti-braces text-xs text-indigo-400"></i>
+                    <span>Dados JSON</span>
+                  </button>
+
+                  <button 
+                    id="modal-btn-print"
+                    onClick={() => {
+                      window.print();
+                      addToast('Sistema de impressão acionado.', 'info');
+                    }}
+                    className="py-2.5 px-3.5 rounded-lg border border-slate-700 text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center justify-center space-x-1 cursor-pointer"
+                  >
+                    <i className="ti ti-printer text-sm"></i>
+                    <span>Imprimir</span>
+                  </button>
+                </div>
+
                 <button 
                   id="modal-btn-close-bottom"
                   onClick={() => setViewingCert(null)}
-                  className="px-4 py-2 rounded bg-slate-900 text-white hover:bg-slate-800 transition-colors font-medium"
+                  className="py-2.5 px-5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold cursor-pointer"
                 >
                   Fechar Janela
                 </button>
