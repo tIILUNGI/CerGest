@@ -6,6 +6,12 @@ export default function DemoOne() {
       onLogin={(email, password) => {
         console.log("Logged in:", email, password);
       }} 
+      onCreateAccount={(data) => {
+        console.log("Account created:", data);
+      }}
+      onForgotPassword={(data) => {
+        console.log("Password recovery:", data);
+      }}
     />
   );
 }
