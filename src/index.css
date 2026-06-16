@@ -1,0 +1,156 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Fira+Code&display=swap');
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Inter", sans-serif;
+  --font-mono: "Fira Code", monospace;
+}
+
+:root {
+  /* Cores Base - Modo Claro Bento Grid */
+  --color-bg-primary: #ffffff;      /* Cor interna de Bento Cards */
+  --color-bg-secondary: #f4f6f5;    /* Fundo Bento Premium com sutil matiz sálvia/verde macio */
+  --color-bg-tertiary: #eaeee3;     /* Áreas recuadas secundárias verdes suaves */
+  
+  --color-brand-primary: #022c22;   /* Deep Forest Green (ILUNGI Emerald-950) */
+  --color-brand-primary-light: #064e3b; /* ILUNGI Emerald-900 */
+  --color-brand-accent: #7811f7;    /* ILUNGI Purple / Electric Violet */
+  --color-brand-accent-light: #903dfa; /* Acento Violeta Vibrante */
+  --color-brand-accent-bg: #faf9fe;   /* Champagne / Violet Softest Background */
+  
+  --color-text-primary: #022c22;    /* Texto Principal em Deep Forest Green para visual editorial sofisticado */
+  --color-text-secondary: #12352c;  /* Texto de Apoio Verde Floresta Profundo */
+  --color-text-muted: #526f66;      /* Metadados */
+  
+  --color-border: rgba(2, 44, 34, 0.08); /* Borda Bento Ultrafina e Suave em tom floresta complacente */
+  
+  /* Cores Semânticas */
+  --color-success: #10b981;
+  --color-success-bg: #ecfdf5;
+  --color-warning: #f59e0b;
+  --color-warning-bg: #fffbeb;
+  --color-danger: #ef4444;
+  --color-danger-bg: #fef2f2;
+
+  --border-width-thin: 1px;         /* Borda nítida de 1px */
+  --border-radius: 12px;            /* Cantos Bento Arredondados e Elegantes */
+}
+
+/* Modo Escuro */
+.dark-mode {
+  --color-bg-primary: #051611;      /* Emerald/Forest Profundo e Intenso (11% Luminosidade) */
+  --color-bg-secondary: #010907;    /* Quase Preto com toque Verde Esmeralda Macio */
+  --color-bg-tertiary: #08231c;
+  
+  --color-brand-primary: #10b981;   /* Emerald 500 */
+  --color-brand-primary-light: #34d399; /* Emerald 400 */
+  --color-brand-accent: #a78bfa;    /* Lilás / Violeta Elétrico Pastel */
+  --color-brand-accent-light: #c084fc;
+  --color-brand-accent-bg: #1e1333; /* Dark Indigo Violet */
+  
+  --color-text-primary: #f0fdf4;    /* Off-white esverdeado super macio e legível */
+  --color-text-secondary: #a7f3d0;  /* Verde menta suave */
+  --color-text-muted: #628a7e;      /* Metadados */
+  
+  --color-border: rgba(16, 185, 129, 0.12); /* Borda bento escura esmeralda */
+  
+  --color-success: #34d399;
+  --color-success-bg: #064e3b;
+  --color-warning: #fbbf24;
+  --color-warning-bg: #451a03;
+  --color-danger: #f87171;
+  --color-danger-bg: #7f1d1d;
+}
+
+body {
+  font-family: "Plus Jakarta Sans", "Inter", sans-serif;
+  font-weight: 400;
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  margin: 0;
+  transition: background-color 0.25s ease, color 0.25s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Regra Mágica para Transformar Cards Existentes em Elementos "Bento Box" Genuínos */
+.theme-border {
+  border: var(--border-width-thin) solid var(--color-border);
+}
+
+.theme-rounded {
+  border-radius: var(--border-radius);
+}
+
+/* Seletores compostos para Bento Cards reais */
+.theme-rounded.theme-border {
+  background-color: var(--color-bg-primary);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02),
+              0 4px 12px -2px rgba(15, 23, 42, 0.03),
+              0 12px 24px -6px rgba(15, 23, 42, 0.02);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Efeito de Elevação / Floating ao Passar o Rato típica de Bento Layouts altamente refinados */
+.theme-rounded.theme-border:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px -1px rgba(2, 44, 34, 0.02),
+              0 12px 20px -3px rgba(120, 17, 247, 0.08),
+              0 24px 36px -6px rgba(120, 17, 247, 0.04);
+  border-color: rgba(120, 17, 247, 0.35); /* Brilho de acento violeta elegante */
+}
+
+/* Detalhe especial para quando em modo escuro */
+.dark-mode .theme-rounded.theme-border:hover {
+  border-color: rgba(167, 139, 250, 0.3);
+}
+
+/* Custom interactive styles */
+.btn-primary {
+  background-color: var(--color-brand-accent);
+  color: #ffffff;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  border-radius: 8px;
+}
+.btn-primary:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.tabler-icon-fix {
+  font-family: 'tabler-icons' !important;
+  speak: none;
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar Customizada */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.15);
+  border-radius: 10px;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb {
+  background: rgba(248, 250, 252, 0.15);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.3);
+}

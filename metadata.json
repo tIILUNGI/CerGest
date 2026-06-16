@@ -1,0 +1,6 @@
+{
+  "name": "CerGest",
+  "description": "Sistema de Gestão de Certificados profissional, dinâmico e interativo",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
